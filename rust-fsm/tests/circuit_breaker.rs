@@ -5,7 +5,7 @@ use rust_fsm::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum CircuitBreakerInput {
     Successful,
     Unsuccessful,
@@ -31,7 +31,7 @@ impl StateMachineImpl for CircuitBreakerMachine {
     type Output = CircuitBreakerOutputSetTimer;
     const INITIAL_STATE: Self::State = CircuitBreakerState::Closed;
 
-    fn transition(state: &Self::State, input: &Self::Input) -> Option<Self::State> {
+    fn transition(state: Self::State, input: Self::Input) -> Option<Self::State> {
         match (state, input) {
             (CircuitBreakerState::Closed, CircuitBreakerInput::Unsuccessful) => {
                 Some(CircuitBreakerState::Open)
@@ -49,7 +49,7 @@ impl StateMachineImpl for CircuitBreakerMachine {
         }
     }
 
-    fn output(state: &Self::State, input: &Self::Input) -> Option<Self::Output> {
+    fn output(state: Self::State, input: Self::Input) -> Option<Self::Output> {
         match (state, input) {
             (CircuitBreakerState::Closed, CircuitBreakerInput::Unsuccessful) => {
                 Some(CircuitBreakerOutputSetTimer)
@@ -70,7 +70,7 @@ fn circuit_breaker() {
     let machine = Arc::new(Mutex::new(machine));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&CircuitBreakerInput::Unsuccessful).unwrap();
+        let res = lock.consume(CircuitBreakerInput::Unsuccessful).unwrap();
         assert_eq!(res, Some(CircuitBreakerOutputSetTimer));
         assert_eq!(lock.state(), &CircuitBreakerState::Open);
     }
@@ -80,7 +80,7 @@ fn circuit_breaker() {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::new(5, 0));
         let mut lock = machine_wait.lock().unwrap();
-        let res = lock.consume(&CircuitBreakerInput::TimerTriggered).unwrap();
+        let res = lock.consume(CircuitBreakerInput::TimerTriggered).unwrap();
         assert_eq!(res, None);
         assert_eq!(lock.state(), &CircuitBreakerState::HalfOpen);
     });
@@ -90,7 +90,7 @@ fn circuit_breaker() {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::new(1, 0));
         let mut lock = machine_try.lock().unwrap();
-        let res = lock.consume(&CircuitBreakerInput::Successful);
+        let res = lock.consume(CircuitBreakerInput::Successful);
         assert!(matches!(res, Err(TransitionImpossibleError)));
         assert_eq!(lock.state(), &CircuitBreakerState::Open);
     });
@@ -99,7 +99,7 @@ fn circuit_breaker() {
     std::thread::sleep(Duration::new(7, 0));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&CircuitBreakerInput::Successful).unwrap();
+        let res = lock.consume(CircuitBreakerInput::Successful).unwrap();
         assert_eq!(res, None);
         assert_eq!(lock.state(), &CircuitBreakerState::Closed);
     }

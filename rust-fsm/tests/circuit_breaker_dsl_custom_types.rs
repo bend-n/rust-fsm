@@ -5,18 +5,21 @@ use rust_fsm::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
 pub enum Input {
     Successful,
     Unsuccessful,
     TimerTriggered,
 }
 
+#[derive(Clone, Copy)]
 pub enum State {
     Closed,
     HalfOpen,
     Open,
 }
 
+#[derive(Clone, Copy)]
 pub enum Output {
     SetupTimer,
 }
@@ -25,8 +28,8 @@ state_machine! {
     #[state_machine(input(crate::Input), state(crate::State), output(crate::Output))]
     circuit_breaker(Closed)
 
-    Closed(Unsuccessful) => Open [SetupTimer],
-    Open(TimerTriggered) => HalfOpen,
+    Closed => Unsuccessful => Open [SetupTimer],
+    Open => TimerTriggered => HalfOpen,
     HalfOpen => {
         Successful => Closed,
         Unsuccessful => Open [SetupTimer]
@@ -41,7 +44,7 @@ fn circit_breaker_dsl() {
     let machine = Arc::new(Mutex::new(machine));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&Input::Unsuccessful).unwrap();
+        let res = lock.consume(Input::Unsuccessful).unwrap();
         assert!(matches!(res, Some(Output::SetupTimer)));
         assert!(matches!(lock.state(), &State::Open));
     }
@@ -51,7 +54,7 @@ fn circit_breaker_dsl() {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::new(5, 0));
         let mut lock = machine_wait.lock().unwrap();
-        let res = lock.consume(&Input::TimerTriggered).unwrap();
+        let res = lock.consume(Input::TimerTriggered).unwrap();
         assert!(matches!(res, None));
         assert!(matches!(lock.state(), &State::HalfOpen));
     });
@@ -61,7 +64,7 @@ fn circit_breaker_dsl() {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::new(1, 0));
         let mut lock = machine_try.lock().unwrap();
-        let res = lock.consume(&Input::Successful);
+        let res = lock.consume(Input::Successful);
         assert!(matches!(res, Err(TransitionImpossibleError)));
         assert!(matches!(lock.state(), &State::Open));
     });
@@ -70,7 +73,7 @@ fn circit_breaker_dsl() {
     std::thread::sleep(Duration::new(7, 0));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&Input::Successful).unwrap();
+        let res = lock.consume(Input::Successful).unwrap();
         assert!(matches!(res, None));
         assert!(matches!(lock.state(), &State::Closed));
     }

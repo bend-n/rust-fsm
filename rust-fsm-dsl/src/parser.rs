@@ -1,12 +1,11 @@
+use super::variant::Variant;
 use syn::{
-    braced, bracketed, parenthesized,
     parse::{Error, Parse, ParseStream, Result},
-    token::{Bracket, Paren},
-    Attribute, Ident, Path, Token, Visibility,
+    token::Bracket,
+    *,
 };
-
 /// The output of a state transition
-pub struct Output(Option<Ident>);
+pub struct Output(Option<Variant>);
 
 impl Parse for Output {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -20,7 +19,7 @@ impl Parse for Output {
     }
 }
 
-impl From<Output> for Option<Ident> {
+impl From<Output> for Option<Variant> {
     fn from(output: Output) -> Self {
         output.0
     }
@@ -29,9 +28,9 @@ impl From<Output> for Option<Ident> {
 /// Represents a part of state transition without the initial state. The `Parse`
 /// trait is implemented for the compact form.
 pub struct TransitionEntry {
-    pub input_value: Ident,
-    pub final_state: Ident,
-    pub output: Option<Ident>,
+    pub input_value: Variant,
+    pub final_state: Variant,
+    pub output: Option<Variant>,
 }
 
 impl Parse for TransitionEntry {
@@ -50,19 +49,18 @@ impl Parse for TransitionEntry {
 
 /// Parses the transition in any of the possible formats.
 pub struct TransitionDef {
-    pub initial_state: Ident,
+    pub initial_state: Variant,
     pub transitions: Vec<TransitionEntry>,
 }
 
 impl Parse for TransitionDef {
     fn parse(input: ParseStream) -> Result<Self> {
         let initial_state = input.parse()?;
+        input.parse::<Token![=>]>()?;
         // Parse the transition in the simple format
-        // InitialState(Input) => ResultState [Output]
-        let transitions = if input.lookahead1().peek(Paren) {
-            let input_content;
-            parenthesized!(input_content in input);
-            let input_value = input_content.parse()?;
+        // InitialState => Input => ResultState
+        let transitions = if !input.lookahead1().peek(token::Brace) {
+            let input_value = input.parse()?;
             input.parse::<Token![=>]>()?;
             let final_state = input.parse()?;
             let output = input.parse::<Output>()?.into();
@@ -78,7 +76,6 @@ impl Parse for TransitionDef {
             //     Input1 => State1,
             //     Input2 => State2 [Output]
             // }
-            input.parse::<Token![=>]>()?;
             let entries_content;
             braced!(entries_content in input);
 
@@ -120,7 +117,7 @@ pub struct StateMachineDef {
     /// The visibility modifier (applies to all generated items)
     pub visibility: Visibility,
     pub name: Ident,
-    pub initial_state: Ident,
+    pub initial_state: Variant,
     pub transitions: Vec<TransitionDef>,
     pub attributes: Vec<Attribute>,
     pub input_type: Option<Path>,

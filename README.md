@@ -75,8 +75,8 @@ state_machine! {
     /// A Circuit Breaker state machine.
     circuit_breaker(Closed)
 
-    Closed(Unsuccessful) => Open [SetupTimer],
-    Open(TimerTriggered) => HalfOpen,
+    Closed => Unsuccessful => Open [SetupTimer],
+    Open => TimerTriggered => HalfOpen,
     HalfOpen => {
         Successful => Closed,
         Unsuccessful => Open [SetupTimer]
@@ -103,10 +103,10 @@ This state machine can be used as follows:
 // Initialize the state machine. The state is `Closed` now.
 let mut machine = circuit_breaker::StateMachine::new();
 // Consume the `Successful` input. No state transition is performed.
-let _ = machine.consume(&circuit_breaker::Input::Successful);
+let _ = machine.consume(circuit_breaker::Input::Successful);
 // Consume the `Unsuccesful` input. The machine is moved to the `Open`
 // state. The output is `SetupTimer`.
-let output = machine.consume(&circuit_breaker::Input::Unsuccessful).unwrap();
+let output = machine.consume(circuit_breaker::Input::Unsuccessful).unwrap();
 // Check the output
 if let Some(circuit_breaker::Output::SetupTimer) = output {
     // Set up the timer...

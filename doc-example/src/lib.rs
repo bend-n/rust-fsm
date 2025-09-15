@@ -6,8 +6,8 @@ state_machine! {
     /// https://martinfowler.com/bliki/CircuitBreaker.html
     pub circuit_breaker(Closed)
 
-    Closed(Unsuccessful) => Open [SetupTimer],
-    Open(TimerTriggered) => HalfOpen,
+    Closed => Unsuccessful => Open [SetupTimer],
+    Open => TimerTriggered => HalfOpen,
     HalfOpen => {
         Successful => Closed,
         Unsuccessful => Open [SetupTimer]

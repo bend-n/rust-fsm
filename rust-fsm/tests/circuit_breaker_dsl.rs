@@ -6,10 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 state_machine! {
+    #[derive(Clone, Copy)]
     circuit_breaker(Closed)
 
-    Closed(Unsuccessful) => Open [SetupTimer],
-    Open(TimerTriggered) => HalfOpen,
+    Closed => Unsuccessful => Open [SetupTimer],
+    Open => TimerTriggered => HalfOpen,
     HalfOpen => {
         Successful => Closed,
         Unsuccessful => Open [SetupTimer]
@@ -24,7 +25,7 @@ fn circit_breaker_dsl() {
     let machine = Arc::new(Mutex::new(machine));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&circuit_breaker::Input::Unsuccessful).unwrap();
+        let res = lock.consume(circuit_breaker::Input::Unsuccessful).unwrap();
         assert!(matches!(res, Some(circuit_breaker::Output::SetupTimer)));
         assert!(matches!(lock.state(), &circuit_breaker::State::Open));
     }
@@ -35,7 +36,7 @@ fn circit_breaker_dsl() {
         std::thread::sleep(Duration::new(5, 0));
         let mut lock = machine_wait.lock().unwrap();
         let res = lock
-            .consume(&circuit_breaker::Input::TimerTriggered)
+            .consume(circuit_breaker::Input::TimerTriggered)
             .unwrap();
         assert!(matches!(res, None));
         assert!(matches!(lock.state(), &circuit_breaker::State::HalfOpen));
@@ -46,7 +47,7 @@ fn circit_breaker_dsl() {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::new(1, 0));
         let mut lock = machine_try.lock().unwrap();
-        let res = lock.consume(&circuit_breaker::Input::Successful);
+        let res = lock.consume(circuit_breaker::Input::Successful);
         assert!(matches!(res, Err(TransitionImpossibleError)));
         assert!(matches!(lock.state(), &circuit_breaker::State::Open));
     });
@@ -55,7 +56,7 @@ fn circit_breaker_dsl() {
     std::thread::sleep(Duration::new(7, 0));
     {
         let mut lock = machine.lock().unwrap();
-        let res = lock.consume(&circuit_breaker::Input::Successful).unwrap();
+        let res = lock.consume(circuit_breaker::Input::Successful).unwrap();
         assert!(matches!(res, None));
         assert!(matches!(lock.state(), &circuit_breaker::State::Closed));
     }

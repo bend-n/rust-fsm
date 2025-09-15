@@ -7,17 +7,17 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use std::{collections::BTreeSet, iter::FromIterator};
-use syn::{parse_macro_input, Attribute, Ident};
-
+use syn::*;
 mod parser;
-
+mod variant;
+use variant::Variant;
 /// The full information about a state transition. Used to unify the
 /// represantion of the simple and the compact forms.
 struct Transition<'a> {
-    initial_state: &'a Ident,
-    input_value: &'a Ident,
-    final_state: &'a Ident,
-    output: &'a Option<Ident>,
+    initial_state: &'a Variant,
+    input_value: &'a Variant,
+    final_state: &'a Variant,
+    output: &'a Option<Variant>,
 }
 
 fn attrs_to_token_stream(attrs: Vec<Attribute>) -> proc_macro2::TokenStream {
@@ -80,15 +80,16 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
             "///    {initial_state} --> {final_state}: {input_value}"
         ));
 
+        let input_ = input_value.match_on();
         transition_cases.push(quote! {
-            (Self::State::#initial_state, Self::Input::#input_value) => {
+            (Self::State::#initial_state, Self::Input::#input_) => {
                 Some(Self::State::#final_state)
             }
         });
 
         if let Some(output_value) = output {
             output_cases.push(quote! {
-                (Self::State::#initial_state, Self::Input::#input_value) => {
+                (Self::State::#initial_state, Self::Input::#input_) => {
                     Some(Self::Output::#output_value)
                 }
             });
@@ -191,14 +192,14 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
                 type Output = #output_type;
                 const INITIAL_STATE: Self::State = Self::State::#initial_state_name;
 
-                fn transition(state: &Self::State, input: &Self::Input) -> Option<Self::State> {
+                fn transition(state: Self::State, input: Self::Input) -> Option<Self::State> {
                     match (state, input) {
                         #(#transition_cases)*
                         _ => None,
                     }
                 }
 
-                fn output(state: &Self::State, input: &Self::Input) -> Option<Self::Output> {
+                fn output(state: Self::State, input: Self::Input) -> Option<Self::Output> {
                     match (state, input) {
                         #(#output_cases)*
                         _ => None,

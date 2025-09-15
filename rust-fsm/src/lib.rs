@@ -101,10 +101,10 @@ This state machine can be used as follows:
 // Initialize the state machine. The state is `Closed` now.
 let mut machine = circuit_breaker::StateMachine::new();
 // Consume the `Successful` input. No state transition is performed.
-let _ = machine.consume(&circuit_breaker::Input::Successful);
+let _ = machine.consume(circuit_breaker::Input::Successful);
 // Consume the `Unsuccesful` input. The machine is moved to the `Open`
 // state. The output is `SetupTimer`.
-let output = machine.consume(&circuit_breaker::Input::Unsuccessful).unwrap();
+let output = machine.consume(circuit_breaker::Input::Unsuccessful).unwrap();
 // Check the output
 if let Some(circuit_breaker::Output::SetupTimer) = output {
     // Set up the timer...
@@ -229,7 +229,7 @@ You can see an example of the Circuit Breaker state machine in the
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::fmt;
+use core::{fmt, ops::Deref};
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -257,11 +257,11 @@ pub trait StateMachineImpl {
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs `None` when there is no transition
     /// for a given combination of the input and the state.
-    fn transition(state: &Self::State, input: &Self::Input) -> Option<Self::State>;
+    fn transition(state: Self::State, input: Self::Input) -> Option<Self::State>;
     /// The output function that outputs some value from the output alphabet
     /// based on the current state and the given input. Outputs `None` when
     /// there is no output for a given combination of the input and the state.
-    fn output(state: &Self::State, input: &Self::Input) -> Option<Self::Output>;
+    fn output(state: Self::State, input: Self::Input) -> Option<Self::Output>;
 }
 
 /// A convenience wrapper around the `StateMachine` trait that encapsulates the
@@ -292,24 +292,39 @@ where
         Self { state }
     }
 
+    pub fn transition(self, input: T::Input) -> Result<T::State, TransitionImpossibleError> {
+        T::transition(self.state, input).ok_or(TransitionImpossibleError)
+    }
+    pub fn output(self, input: T::Input) -> Result<T::Output, TransitionImpossibleError> {
+        T::output(self.state, input).ok_or(TransitionImpossibleError)
+    }
+
     /// Consumes the provided input, gives an output and performs a state
     /// transition. If a state transition with the current state and the
     /// provided input is not allowed, returns an error.
     pub fn consume(
         &mut self,
-        input: &T::Input,
-    ) -> Result<Option<T::Output>, TransitionImpossibleError> {
-        if let Some(state) = T::transition(&self.state, input) {
-            let output = T::output(&self.state, input);
-            self.state = state;
-            Ok(output)
-        } else {
-            Err(TransitionImpossibleError)
-        }
+        input: T::Input,
+    ) -> Result<Option<T::Output>, TransitionImpossibleError>
+    where
+        T::Input: Clone,
+        T::State: Clone,
+    {
+        T::transition(self.state.clone(), input.clone())
+            .ok_or(TransitionImpossibleError)
+            .map(|state| T::output(std::mem::replace(&mut self.state, state), input))
     }
 
     /// Returns the current state.
     pub fn state(&self) -> &T::State {
+        &self.state
+    }
+}
+
+impl<T: StateMachineImpl> Deref for StateMachine<T> {
+    type Target = T::State;
+
+    fn deref(&self) -> &Self::Target {
         &self.state
     }
 }
