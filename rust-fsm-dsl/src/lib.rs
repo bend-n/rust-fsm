@@ -11,6 +11,8 @@ use syn::*;
 mod parser;
 mod variant;
 use variant::Variant;
+
+use crate::parser::StateMachineDef;
 /// The full information about a state transition. Used to unify the
 /// represantion of the simple and the compact forms.
 struct Transition<'a> {
@@ -29,22 +31,28 @@ fn attrs_to_token_stream(attrs: Vec<Attribute>) -> proc_macro2::TokenStream {
 /// Produce a state machine definition from the provided `rust-fmt` DSL
 /// description.
 pub fn state_machine(tokens: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(tokens as parser::StateMachineDef);
+    let StateMachineDef {
+        doc,
+        visibility,
+        state_name,
+        input_name,
+        output_name,
+        initial_state,
+        transitions,
+        attributes,
+    } = parse_macro_input!(tokens as parser::StateMachineDef);
 
-    let doc = attrs_to_token_stream(input.doc);
-    let attrs = attrs_to_token_stream(input.attributes);
+    let doc = attrs_to_token_stream(doc);
+    let attrs = attrs_to_token_stream(attributes);
 
-    if input.transitions.is_empty() {
+    if transitions.is_empty() {
         let output = quote! {
             compile_error!("rust-fsm: at least one state transition must be provided");
         };
         return output.into();
     }
 
-    let fsm_name = input.name;
-    let visibility = input.visibility;
-
-    let transitions = input.transitions.iter().flat_map(|def| {
+    let transitions = transitions.iter().flat_map(|def| {
         def.transitions.iter().map(move |transition| Transition {
             initial_state: &def.initial_state,
             input_value: &transition.input_value,
@@ -62,10 +70,10 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     #[cfg(feature = "diagram")]
     let mut mermaid_diagram = format!(
         "///```mermaid\n///stateDiagram-v2\n///    [*] --> {}\n",
-        input.initial_state
+        initial_state
     );
 
-    states.insert(&input.initial_state);
+    states.insert(&initial_state);
 
     for transition in transitions {
         let Transition {
@@ -81,16 +89,18 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         ));
 
         let input_ = input_value.match_on();
+        let final_state_ = final_state.match_on();
         transition_cases.push(quote! {
-            (Self::State::#initial_state, Self::Input::#input_) => {
-                Some(Self::State::#final_state)
+            (Self::#initial_state, Self::Input::#input_) => {
+                Some(Self::#final_state_)
             }
         });
 
         if let Some(output_value) = output {
+            let output_value_ = output_value.match_on();
             output_cases.push(quote! {
-                (Self::State::#initial_state, Self::Input::#input_) => {
-                    Some(Self::Output::#output_value)
+                (Self::#initial_state, Self::Input::#input_) => {
+                    Some(Self::Output::#output_value_)
                 }
             });
 
@@ -114,55 +124,45 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     #[cfg(feature = "diagram")]
     let mermaid_diagram: proc_macro2::TokenStream = mermaid_diagram.parse().unwrap();
 
-    let initial_state_name = &input.initial_state;
+    let initial_state_name = &initial_state;
 
-    let (input_type, input_impl) = match input.input_type {
-        Some(t) => (quote!(#t), quote!()),
-        None => (
-            quote!(Input),
-            quote! {
-                #attrs
-                pub enum Input {
-                    #(#inputs),*
-                }
-            },
-        ),
-    };
-
-    let (state_type, state_impl) = match input.state_type {
-        Some(t) => (quote!(#t), quote!()),
-        None => (
-            quote!(State),
-            quote! {
-                #attrs
-                pub enum State {
-                    #(#states),*
-                }
-            },
-        ),
-    };
-
-    let (output_type, output_impl) = match input.output_type {
-        Some(t) => (quote!(#t), quote!()),
-        None => {
-            // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
-            // altogether if the output alphabet is empty.
-            let attrs = if outputs.is_empty() {
-                quote!()
-            } else {
-                attrs.clone()
-            };
-            (
-                quote!(Output),
-                quote! {
-                    #attrs
-                    pub enum Output {
-                        #(#outputs),*
-                    }
-                },
-            )
+    let input_impl = input_name.tokenize(|f| {
+        quote! {
+            #attrs
+            #visibility enum #f {
+                #(#inputs),*
+            }
         }
-    };
+    });
+    let input_name = input_name.path();
+    let state_impl = state_name.tokenize(|f| {
+        quote! {
+            #attrs
+            #visibility enum #f {
+                #(#states),*
+            }
+        }
+    });
+    let state_name = state_name.path();
+
+    let output_impl = output_name.tokenize(|output_name| {
+        // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
+        // altogether if the output alphabet is empty.
+        let attrs = if outputs.is_empty() {
+            quote!()
+        } else {
+            attrs.clone()
+        };
+
+        quote! {
+            #attrs
+            #visibility enum #output_name {
+                #(#outputs),*
+            }
+        }
+    });
+
+    let output_name = output_name.path();
 
     #[cfg(feature = "diagram")]
     let diagram = quote! {
@@ -174,39 +174,32 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     let diagram = quote!();
 
     let output = quote! {
+        #input_impl
         #doc
         #diagram
-        #visibility mod #fsm_name {
-            #attrs
-            pub struct Impl;
+        #state_impl
+        #output_impl
 
-            pub type StateMachine = ::rust_fsm::StateMachine<Impl>;
+        impl ::rust_fsm::StateMachineImpl for #state_name {
+            type Input = #input_name;
+            type Output = #output_name;
+            const INITIAL_STATE: Self = Self::#initial_state_name;
 
-            #input_impl
-            #state_impl
-            #output_impl
-
-            impl ::rust_fsm::StateMachineImpl for Impl {
-                type Input = #input_type;
-                type State = #state_type;
-                type Output = #output_type;
-                const INITIAL_STATE: Self::State = Self::State::#initial_state_name;
-
-                fn transition(state: Self::State, input: Self::Input) -> Option<Self::State> {
-                    match (state, input) {
-                        #(#transition_cases)*
-                        _ => None,
-                    }
+            fn transition(self, input: Self::Input) -> Option<Self> {
+                match (self, input) {
+                    #(#transition_cases)*
+                    _ => None,
                 }
+            }
 
-                fn output(state: Self::State, input: Self::Input) -> Option<Self::Output> {
-                    match (state, input) {
-                        #(#output_cases)*
-                        _ => None,
-                    }
+            fn output(self, input: Self::Input) -> Option<Self::Output> {
+                match (self, input) {
+                    #(#output_cases)*
+                    _ => None,
                 }
             }
         }
+
     };
 
     output.into()

@@ -140,13 +140,13 @@ You can specify visibility like this:
 use rust_fsm::*;
 
 state_machine! {
-    pub CircuitBreaker(Closed)
+    pub CircuitBreaker: Closed => Result => Action
 
-    Closed(Unsuccessful) => Open [SetupTimer],
-    Open(TimerTriggered) => HalfOpen,
+    Closed => Unsuccessful => Open [SetupTimer],
+    Open => TimerTriggered => HalfOpen,
     HalfOpen => {
         Successful => Closed,
-        Unsuccessful => Open [SetupTimer],
+        Unsuccessful => Open [SetupTimer]
     }
 }
 ```
@@ -229,7 +229,7 @@ You can see an example of the Circuit Breaker state machine in the
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::{fmt, ops::Deref};
+use core::fmt;
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -243,100 +243,45 @@ pub use aquamarine::aquamarine;
 /// machine/transducer. This is just a formal definition that may be
 /// inconvenient to be used in practical programming, but it is used throughout
 /// this library for more practical things.
-pub trait StateMachineImpl {
+pub trait StateMachineImpl: Sized {
     /// The input alphabet.
     type Input;
-    /// The set of possible states.
-    type State;
     /// The output alphabet.
     type Output;
     /// The initial state of the machine.
     // allow since there is usually no interior mutability because states are enums
     #[allow(clippy::declare_interior_mutable_const)]
-    const INITIAL_STATE: Self::State;
+    const INITIAL_STATE: Self;
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs `None` when there is no transition
     /// for a given combination of the input and the state.
-    fn transition(state: Self::State, input: Self::Input) -> Option<Self::State>;
+    fn transition(self, input: Self::Input) -> Option<Self>;
     /// The output function that outputs some value from the output alphabet
     /// based on the current state and the given input. Outputs `None` when
     /// there is no output for a given combination of the input and the state.
-    fn output(state: Self::State, input: Self::Input) -> Option<Self::Output>;
-}
-
-/// A convenience wrapper around the `StateMachine` trait that encapsulates the
-/// state and transition and output function calls.
-#[derive(Debug, Clone)]
-pub struct StateMachine<T: StateMachineImpl> {
-    state: T::State,
+    fn output(self, input: Self::Input) -> Option<Self::Output>;
+    fn consume(
+        &mut self,
+        input: Self::Input,
+    ) -> Result<Option<Self::Output>, TransitionImpossibleError>
+    where
+        Self::Input: Clone,
+        Self: Clone,
+    {
+        self.clone()
+            .transition(input.clone())
+            .ok_or(TransitionImpossibleError)
+            .map(|state| std::mem::replace(self, state).output(input))
+    }
+    fn new() -> Self {
+        Self::INITIAL_STATE
+    }
 }
 
 #[derive(Debug, Clone)]
 /// An error type that represents that the state transition is impossible given
 /// the current combination of state and input.
 pub struct TransitionImpossibleError;
-
-impl<T> StateMachine<T>
-where
-    T: StateMachineImpl,
-{
-    /// Create a new instance of this wrapper which encapsulates the initial
-    /// state.
-    pub fn new() -> Self {
-        Self::from_state(T::INITIAL_STATE)
-    }
-
-    /// Create a new instance of this wrapper which encapsulates the given
-    /// state.
-    pub fn from_state(state: T::State) -> Self {
-        Self { state }
-    }
-
-    pub fn transition(self, input: T::Input) -> Result<T::State, TransitionImpossibleError> {
-        T::transition(self.state, input).ok_or(TransitionImpossibleError)
-    }
-    pub fn output(self, input: T::Input) -> Result<T::Output, TransitionImpossibleError> {
-        T::output(self.state, input).ok_or(TransitionImpossibleError)
-    }
-
-    /// Consumes the provided input, gives an output and performs a state
-    /// transition. If a state transition with the current state and the
-    /// provided input is not allowed, returns an error.
-    pub fn consume(
-        &mut self,
-        input: T::Input,
-    ) -> Result<Option<T::Output>, TransitionImpossibleError>
-    where
-        T::Input: Clone,
-        T::State: Clone,
-    {
-        T::transition(self.state.clone(), input.clone())
-            .ok_or(TransitionImpossibleError)
-            .map(|state| T::output(std::mem::replace(&mut self.state, state), input))
-    }
-
-    /// Returns the current state.
-    pub fn state(&self) -> &T::State {
-        &self.state
-    }
-}
-
-impl<T: StateMachineImpl> Deref for StateMachine<T> {
-    type Target = T::State;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
-    }
-}
-
-impl<T> Default for StateMachine<T>
-where
-    T: StateMachineImpl,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl fmt::Display for TransitionImpossibleError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

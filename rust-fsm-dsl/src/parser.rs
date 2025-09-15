@@ -1,4 +1,5 @@
 use super::variant::Variant;
+use proc_macro2::TokenStream;
 use syn::{
     parse::{Error, Parse, ParseStream, Result},
     token::Bracket,
@@ -116,26 +117,41 @@ pub struct StateMachineDef {
     pub doc: Vec<Attribute>,
     /// The visibility modifier (applies to all generated items)
     pub visibility: Visibility,
-    pub name: Ident,
+    pub state_name: ImplementationRequired,
+    pub input_name: ImplementationRequired,
+    pub output_name: ImplementationRequired,
     pub initial_state: Variant,
     pub transitions: Vec<TransitionDef>,
     pub attributes: Vec<Attribute>,
-    pub input_type: Option<Path>,
-    pub state_type: Option<Path>,
-    pub output_type: Option<Path>,
+}
+
+pub enum ImplementationRequired {
+    Yes(Ident),
+    No(Path),
+}
+
+impl ImplementationRequired {
+    pub fn tokenize(&self, f: impl Fn(&Ident) -> TokenStream) -> TokenStream {
+        match self {
+            ImplementationRequired::Yes(ident) => f(ident),
+            ImplementationRequired::No(_) => TokenStream::default(),
+        }
+    }
+    pub fn path(self) -> Path {
+        match self {
+            ImplementationRequired::Yes(ident) => ident.into(),
+            ImplementationRequired::No(path) => path,
+        }
+    }
 }
 
 impl Parse for StateMachineDef {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut state_machine_attributes = Vec::new();
         let mut doc = Vec::new();
         let attributes = Attribute::parse_outer(input)?
             .into_iter()
             .filter_map(|attribute| {
-                if attribute.path().is_ident("state_machine") {
-                    state_machine_attributes.push(attribute);
-                    None
-                } else if attribute.path().is_ident("doc") {
+                if attribute.path().is_ident("doc") {
                     doc.push(attribute);
                     None
                 } else {
@@ -144,34 +160,21 @@ impl Parse for StateMachineDef {
             })
             .collect();
 
-        let mut input_type = None;
-        let mut state_type = None;
-        let mut output_type = None;
-
-        for attribute in state_machine_attributes {
-            attribute.parse_nested_meta(|meta| {
-                let content;
-                parenthesized!(content in meta.input);
-                let p: Path = content.parse()?;
-
-                if meta.path.is_ident("input") {
-                    input_type = Some(p);
-                } else if meta.path.is_ident("state") {
-                    state_type = Some(p);
-                } else if meta.path.is_ident("output") {
-                    output_type = Some(p);
-                }
-
-                Ok(())
-            })?;
-        }
-
         let visibility = input.parse()?;
-        let name = input.parse()?;
+        let i = || {
+            input
+                .parse::<Ident>()
+                .map(ImplementationRequired::Yes)
+                .or_else(|_| input.parse::<Path>().map(ImplementationRequired::No))
+        };
+        let state_name = i()?;
+        input.parse::<Token![:]>()?;
+        let initial_state = input.parse()?;
 
-        let initial_state_content;
-        parenthesized!(initial_state_content in input);
-        let initial_state = initial_state_content.parse()?;
+        input.parse::<Token![=>]>()?;
+        let input_name = i()?;
+        input.parse::<Token![=>]>()?;
+        let output_name = i()?;
 
         let transitions = input
             .parse_terminated(TransitionDef::parse, Token![,])?
@@ -181,13 +184,12 @@ impl Parse for StateMachineDef {
         Ok(Self {
             doc,
             visibility,
-            name,
+            state_name,
+            input_name,
+            output_name,
             initial_state,
             transitions,
             attributes,
-            input_type,
-            state_type,
-            output_type,
         })
     }
 }

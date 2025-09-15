@@ -25,8 +25,7 @@ pub enum Output {
 }
 
 state_machine! {
-    #[state_machine(input(crate::Input), state(crate::State), output(crate::Output))]
-    circuit_breaker(Closed)
+    crate::State: Closed => crate::Input => crate::Output
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
@@ -38,7 +37,7 @@ state_machine! {
 
 #[test]
 fn circit_breaker_dsl() {
-    let machine = circuit_breaker::StateMachine::new();
+    let machine = State::new();
 
     // Unsuccessful request
     let machine = Arc::new(Mutex::new(machine));
@@ -46,7 +45,7 @@ fn circit_breaker_dsl() {
         let mut lock = machine.lock().unwrap();
         let res = lock.consume(Input::Unsuccessful).unwrap();
         assert!(matches!(res, Some(Output::SetupTimer)));
-        assert!(matches!(lock.state(), &State::Open));
+        assert!(matches!(*lock, State::Open));
     }
 
     // Set up a timer
@@ -56,7 +55,7 @@ fn circit_breaker_dsl() {
         let mut lock = machine_wait.lock().unwrap();
         let res = lock.consume(Input::TimerTriggered).unwrap();
         assert!(matches!(res, None));
-        assert!(matches!(lock.state(), &State::HalfOpen));
+        assert!(matches!(*lock, State::HalfOpen));
     });
 
     // Try to pass a request when the circuit breaker is still open
@@ -66,7 +65,7 @@ fn circit_breaker_dsl() {
         let mut lock = machine_try.lock().unwrap();
         let res = lock.consume(Input::Successful);
         assert!(matches!(res, Err(TransitionImpossibleError)));
-        assert!(matches!(lock.state(), &State::Open));
+        assert!(matches!(*lock, State::Open));
     });
 
     // Test if the circit breaker was actually closed
@@ -75,6 +74,6 @@ fn circit_breaker_dsl() {
         let mut lock = machine.lock().unwrap();
         let res = lock.consume(Input::Successful).unwrap();
         assert!(matches!(res, None));
-        assert!(matches!(lock.state(), &State::Closed));
+        assert!(matches!(*lock, State::Closed));
     }
 }
