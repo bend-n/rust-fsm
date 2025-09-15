@@ -7,7 +7,7 @@ use syn::{parse::Parse, *};
 pub struct Variant {
     // attrs: Vec<Attribute>,
     ident: Ident,
-    field: Option<(Type, Expr)>,
+    field: Option<(Type, Pat)>,
 }
 
 impl Parse for Variant {
@@ -20,7 +20,7 @@ impl Parse for Variant {
             parenthesized!(inp in input);
             let t = inp.parse()?;
             inp.parse::<Token![=>]>()?;
-            Some((t, inp.parse()?))
+            Some((t, Pat::parse_multi(&inp)?))
         } else {
             None
         };
