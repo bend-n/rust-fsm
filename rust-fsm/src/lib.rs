@@ -248,10 +248,6 @@ pub trait StateMachineImpl: Sized {
     type Input;
     /// The output alphabet.
     type Output;
-    /// The initial state of the machine.
-    // allow since there is usually no interior mutability because states are enums
-    #[allow(clippy::declare_interior_mutable_const)]
-    const INITIAL_STATE: Self;
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs `None` when there is no transition
     /// for a given combination of the input and the state.
@@ -260,6 +256,9 @@ pub trait StateMachineImpl: Sized {
     /// based on the current state and the given input. Outputs `None` when
     /// there is no output for a given combination of the input and the state.
     fn output(self, input: Self::Input) -> Option<Self::Output>;
+    /// Consumes the provided input, gives an output and performs a state
+    /// transition. If a state transition with the current state and the
+    /// provided input is not allowed, returns an error.
     fn consume(
         &mut self,
         input: Self::Input,
@@ -272,9 +271,6 @@ pub trait StateMachineImpl: Sized {
             .transition(input.clone())
             .ok_or(TransitionImpossibleError)
             .map(|state| std::mem::replace(self, state).output(input))
-    }
-    fn new() -> Self {
-        Self::INITIAL_STATE
     }
 }
 

@@ -12,14 +12,14 @@ mod parser;
 mod variant;
 use variant::Variant;
 
-use crate::parser::StateMachineDef;
+use crate::{parser::StateMachineDef, variant::Final};
 /// The full information about a state transition. Used to unify the
 /// represantion of the simple and the compact forms.
 struct Transition<'a> {
     initial_state: &'a Variant,
     input_value: &'a Variant,
-    final_state: &'a Variant,
-    output: &'a Option<Variant>,
+    final_state: &'a Final,
+    output: &'a Option<Final>,
 }
 
 fn attrs_to_token_stream(attrs: Vec<Attribute>) -> proc_macro2::TokenStream {
@@ -37,7 +37,6 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         state_name,
         input_name,
         output_name,
-        initial_state,
         transitions,
         attributes,
     } = parse_macro_input!(tokens as parser::StateMachineDef);
@@ -60,21 +59,19 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
             output: &transition.output,
         })
     });
-
+    // fn id(x: impl std::hash::Hash) -> u64 {
+    //     use std::hash::BuildHasher;
+    //     rustc_hash::FxSeededState::with_seed(5).hash_one(x)
+    // }
     let mut states = BTreeSet::new();
     let mut inputs = BTreeSet::new();
     let mut outputs = BTreeSet::new();
     let mut transition_cases = Vec::new();
     let mut output_cases = Vec::new();
 
+    use std::fmt::Write;
     #[cfg(feature = "diagram")]
-    let mut mermaid_diagram = format!(
-        "///```mermaid\n///stateDiagram-v2\n///    [*] --> {}\n",
-        initial_state
-    );
-
-    states.insert(&initial_state);
-
+    let mut mermaid_diagram = format!("///```mermaid\n///stateDiagram-v2\n",);
     for transition in transitions {
         let Transition {
             initial_state,
@@ -83,36 +80,57 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
             output,
         } = transition;
 
+        // #[cfg(feature = "diagram")]
+        // writeln!(
+        //     mermaid_diagram,
+        //     "///    {}: {initial_state}",
+        //     id(&initial_state)
+        // )
+        // .unwrap();
+        // #[cfg(feature = "diagram")]
+        // writeln!(
+        //     mermaid_diagram,
+        //     "///    {}: {final_state}",
+        //     id(&final_state)
+        // )
+        // .unwrap();
         #[cfg(feature = "diagram")]
-        mermaid_diagram.push_str(&format!(
-            "///    {initial_state} --> {final_state}: {input_value}"
-        ));
+        write!(
+            mermaid_diagram,
+            "///    {initial_state} --> {final_state}: {}",
+            input_value.match_on()
+        )
+        .unwrap();
 
-        let input_ = input_value.match_on();
-        let final_state_ = final_state.match_on();
+        let initial_ = initial_state.match_on();
+        let final_ = final_state.reduce();
+        let (input_, guard) = input_value.separate();
+
+        // let input_ = input_value.match_on();
+        // let final_state_ = final_state.match_on();
         transition_cases.push(quote! {
-            (Self::#initial_state, Self::Input::#input_) => {
-                Some(Self::#final_state_)
+            (Self::#initial_, Self::Input::#input_) #guard => {
+                Some(Self::#final_)
             }
         });
 
         if let Some(output_value) = output {
-            let output_value_ = output_value.match_on();
+            let output_ = output_value.reduce();
             output_cases.push(quote! {
-                (Self::#initial_state, Self::Input::#input_) => {
-                    Some(Self::Output::#output_value_)
+                (Self::#initial_, Self::Input::#input_) #guard => {
+                    Some(Self::Output::#output_)
                 }
             });
 
             #[cfg(feature = "diagram")]
-            mermaid_diagram.push_str(&format!(" [{output_value}]"));
+            mermaid_diagram.push_str(&format!(" [\"{output_value}\"]"));
         }
 
         #[cfg(feature = "diagram")]
         mermaid_diagram.push('\n');
 
         states.insert(initial_state);
-        states.insert(final_state);
+        states.insert(Box::leak(Box::new(final_state.clone().variant())));
         inputs.insert(input_value);
         if let Some(ref output) = output {
             outputs.insert(output);
@@ -122,9 +140,15 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     #[cfg(feature = "diagram")]
     mermaid_diagram.push_str("///```");
     #[cfg(feature = "diagram")]
-    let mermaid_diagram: proc_macro2::TokenStream = mermaid_diagram.parse().unwrap();
-
-    let initial_state_name = &initial_state;
+    let mermaid_diagram: proc_macro2::TokenStream = mermaid_diagram
+        .replace("::", "#58;#58;")
+        .replace('(', "#40;")
+        .replace(')', "#41;")
+        .replace('[', "#91;")
+        .replace(']', "#93;")
+        .replace("Default", "def")
+        .parse()
+        .unwrap();
 
     let input_impl = input_name.tokenize(|f| {
         quote! {
@@ -172,7 +196,6 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
 
     #[cfg(not(feature = "diagram"))]
     let diagram = quote!();
-
     let output = quote! {
         #input_impl
         #doc
@@ -183,7 +206,6 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         impl ::rust_fsm::StateMachineImpl for #state_name {
             type Input = #input_name;
             type Output = #output_name;
-            const INITIAL_STATE: Self = Self::#initial_state_name;
 
             fn transition(self, input: Self::Input) -> Option<Self> {
                 match (self, input) {

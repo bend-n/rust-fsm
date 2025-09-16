@@ -10,7 +10,7 @@ state_machine! {
     /// capabilities of its library DSL for defining finite state machines.
     /// https://martinfowler.com/bliki/CircuitBreaker.html
     #[derive(Clone, Copy)]
-    pub CircuitBreaker: Closed => Result => Action
+    pub CircuitBreaker => Result => Action
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
@@ -22,7 +22,7 @@ state_machine! {
 
 #[test]
 fn circit_breaker_dsl() {
-    let machine = CircuitBreaker::new();
+    let machine = CircuitBreaker::Closed;
 
     // Unsuccessful request
     let machine = Arc::new(Mutex::new(machine));

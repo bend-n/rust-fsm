@@ -25,7 +25,7 @@ pub enum Output {
 }
 
 state_machine! {
-    crate::State: Closed => crate::Input => crate::Output
+    crate::State => crate::Input => crate::Output
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
@@ -37,7 +37,7 @@ state_machine! {
 
 #[test]
 fn circit_breaker_dsl() {
-    let machine = State::new();
+    let machine = State::Closed;
 
     // Unsuccessful request
     let machine = Arc::new(Mutex::new(machine));

@@ -3,7 +3,7 @@ use rust_fsm::*;
 state_machine! {
     #[derive(Debug, Clone, Copy)]
     #[repr(C)]
-    Door: Open => Action => __
+    Door => Action => __
 
     Open => Key => Closed,
     Closed => Key => Open,

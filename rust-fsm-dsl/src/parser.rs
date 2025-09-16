@@ -1,3 +1,5 @@
+use crate::variant::Final;
+
 use super::variant::Variant;
 use proc_macro2::TokenStream;
 use syn::{
@@ -6,7 +8,7 @@ use syn::{
     *,
 };
 /// The output of a state transition
-pub struct Output(Option<Variant>);
+pub struct Output(Option<Final>);
 
 impl Parse for Output {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -20,7 +22,7 @@ impl Parse for Output {
     }
 }
 
-impl From<Output> for Option<Variant> {
+impl From<Output> for Option<Final> {
     fn from(output: Output) -> Self {
         output.0
     }
@@ -30,8 +32,8 @@ impl From<Output> for Option<Variant> {
 /// trait is implemented for the compact form.
 pub struct TransitionEntry {
     pub input_value: Variant,
-    pub final_state: Variant,
-    pub output: Option<Variant>,
+    pub final_state: Final,
+    pub output: Option<Final>,
 }
 
 impl Parse for TransitionEntry {
@@ -120,7 +122,6 @@ pub struct StateMachineDef {
     pub state_name: ImplementationRequired,
     pub input_name: ImplementationRequired,
     pub output_name: ImplementationRequired,
-    pub initial_state: Variant,
     pub transitions: Vec<TransitionDef>,
     pub attributes: Vec<Attribute>,
 }
@@ -168,9 +169,6 @@ impl Parse for StateMachineDef {
                 .or_else(|_| input.parse::<Path>().map(ImplementationRequired::No))
         };
         let state_name = i()?;
-        input.parse::<Token![:]>()?;
-        let initial_state = input.parse()?;
-
         input.parse::<Token![=>]>()?;
         let input_name = i()?;
         input.parse::<Token![=>]>()?;
@@ -187,7 +185,6 @@ impl Parse for StateMachineDef {
             state_name,
             input_name,
             output_name,
-            initial_state,
             transitions,
             attributes,
         })
