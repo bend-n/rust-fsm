@@ -1,12 +1,47 @@
-use std::fmt::Display;
+use std::{collections::BTreeSet, fmt::Display};
 
+use proc_macro2::TokenStream;
 use quote::ToTokens;
 use syn::{parse::Parse, *};
 /// Variant with no discriminator
-#[derive(Hash, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Variant {
     pub ident: Ident,
-    field: Option<(Type, Pat, Option<Expr>)>,
+    pub field: Option<(Option<Type>, Pat, Option<Expr>)>,
+}
+
+pub fn find_type(of: &Variant, list: &[Variant]) -> Option<Type> {
+    of.field.clone().and_then(|(x, _, _)| {
+        x.or_else(|| {
+            let i = &of.ident;
+            list.iter()
+                .filter(|x| &x.ident == i)
+                .filter_map(|x| x.field.as_ref().and_then(|x| x.0.clone()))
+                .next()
+        })
+    })
+}
+pub fn tokenize(
+    inputs: &[Variant],
+    f: impl FnOnce(Vec<TokenStream>) -> TokenStream,
+) -> TokenStream {
+    let (Ok(x) | Err(x)) = BTreeSet::from_iter(inputs)
+        .into_iter()
+        .map(|x| {
+            let i = &x.ident;
+            x.field
+                .as_ref()
+                .map(|_| {
+                    let y = find_type(x, &*inputs);
+                    y.ok_or(Error::new_spanned(&x.ident, "type never specified"))
+                        .map(|y| quote::quote! {#i(#y)})
+                })
+                .unwrap_or(Ok(quote::quote! { #i }))
+        })
+        .collect::<Result<_>>()
+        .map_err(Error::into_compile_error)
+        .map(f);
+    x
 }
 
 impl Parse for Variant {
@@ -17,11 +52,17 @@ impl Parse for Variant {
         let field = if input.peek(token::Paren) {
             let inp;
             parenthesized!(inp in input);
-            let t = inp.parse()?;
-            inp.parse::<Token![=>]>()?;
+            let ty = inp
+                .to_string()
+                .contains("=>")
+                .then(|| {
+                    inp.parse()
+                        .and_then(|x| inp.parse::<Token![=>]>().map(|_| x))
+                })
+                .transpose()?;
 
             Some((
-                t,
+                ty,
                 Pat::parse_multi(&inp)?,
                 inp.lookahead1()
                     .peek(Token![if])
@@ -39,6 +80,13 @@ impl Parse for Variant {
     }
 }
 
+impl PartialEq for Variant {
+    fn eq(&self, other: &Self) -> bool {
+        self.ident == other.ident
+    }
+}
+impl Eq for Variant {}
+
 impl PartialOrd for Variant {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.ident.partial_cmp(&other.ident)
@@ -47,15 +95,6 @@ impl PartialOrd for Variant {
 impl Ord for Variant {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.ident.cmp(&other.ident)
-    }
-}
-
-impl ToTokens for Variant {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        self.ident.to_tokens(tokens);
-        if let Some((t, _, _)) = &self.field {
-            tokens.extend(quote::quote! { (#t) })
-        }
     }
 }
 
@@ -82,7 +121,7 @@ impl Variant {
         {
             let b = g
                 .as_ref()
-                .map(|x| quote::quote! { if #x })
+                .map(|x| quote::quote! { if (#x) })
                 .unwrap_or_default();
             (quote::quote! { #ident(#p) }, b)
         } else {
@@ -97,11 +136,8 @@ impl Display for Variant {
     }
 }
 /// type and expression
-#[derive(Hash, Debug, PartialEq, Eq, Clone)]
-pub struct Final {
-    pub ident: Ident,
-    field: Option<(Type, Expr)>,
-}
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Final(Variant);
 
 impl Parse for Final {
     fn parse(input: parse::ParseStream) -> Result<Self> {
@@ -109,72 +145,49 @@ impl Parse for Final {
         let field = if input.peek(token::Paren) {
             let inp;
             parenthesized!(inp in input);
-            let t = inp.parse()?;
-            inp.parse::<Token![=>]>()?;
+            let t = inp
+                .to_string()
+                .contains("=>")
+                .then(|| {
+                    inp.parse()
+                        .and_then(|x| inp.parse::<Token![=>]>().map(|_| x))
+                })
+                .transpose()?;
 
-            Some((t, inp.parse()?))
+            Some((
+                t,
+                Pat::Wild(PatWild {
+                    attrs: vec![],
+                    underscore_token: Default::default(),
+                }),
+                Some(inp.parse()?),
+            ))
         } else {
             None
         };
-        Ok(Final {
-            // attrs,
-            ident,
-            field,
-        })
-    }
-}
-
-impl PartialOrd for Final {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ident.partial_cmp(&other.ident)
-    }
-}
-impl Ord for Final {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.ident.cmp(&other.ident)
-    }
-}
-
-impl ToTokens for Final {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        self.ident.to_tokens(tokens);
-        if let Some((v, _)) = &self.field {
-            tokens.extend(quote::quote! { (#v) })
-        }
+        Ok(Final(Variant { ident, field }))
     }
 }
 
 impl Final {
     pub fn reduce(&self) -> proc_macro2::TokenStream {
-        if let Self {
+        if let Self(Variant {
             ident,
-            field: Some((_, v)),
-        } = self
+            field: Some((_, _, v)),
+        }) = self
         {
             quote::quote! { #ident ( #v ) }
         } else {
-            self.ident.to_token_stream()
+            self.0.ident.to_token_stream()
         }
     }
     pub fn variant(self) -> Variant {
-        Variant {
-            ident: self.ident,
-            field: self.field.map(|(x, _)| {
-                (
-                    x,
-                    Pat::Wild(PatWild {
-                        attrs: vec![],
-                        underscore_token: Default::default(),
-                    }),
-                    None,
-                )
-            }),
-        }
+        self.0
     }
 }
 
 impl Display for Final {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.ident)
+        write!(f, "{}", self.0)
     }
 }

@@ -58,7 +58,7 @@ pub struct TransitionDef {
 
 impl Parse for TransitionDef {
     fn parse(input: ParseStream) -> Result<Self> {
-        let initial_state = input.parse()?;
+        let initial_state: Variant = input.parse()?;
         input.parse::<Token![=>]>()?;
         // Parse the transition in the simple format
         // InitialState => Input => ResultState
@@ -88,7 +88,7 @@ impl Parse for TransitionDef {
                 .collect();
             if entries.is_empty() {
                 return Err(Error::new_spanned(
-                    initial_state,
+                    initial_state.ident,
                     "No transitions provided for a compact representation",
                 ));
             }

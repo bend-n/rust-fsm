@@ -6,7 +6,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use std::{collections::BTreeSet, iter::FromIterator};
+use std::iter::FromIterator;
 use syn::*;
 mod parser;
 mod variant;
@@ -63,15 +63,17 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     //     use std::hash::BuildHasher;
     //     rustc_hash::FxSeededState::with_seed(5).hash_one(x)
     // }
-    let mut states = BTreeSet::new();
-    let mut inputs = BTreeSet::new();
-    let mut outputs = BTreeSet::new();
-    let mut transition_cases = Vec::new();
-    let mut output_cases = Vec::new();
+    let mut states = vec![];
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+    let mut transition_cases = vec![];
+    let mut output_cases = vec![];
 
-    use std::fmt::Write;
     #[cfg(feature = "diagram")]
-    let mut mermaid_diagram = format!("///```mermaid\n///stateDiagram-v2\n",);
+    let mut mermaid_diagram = format!(
+        "///```mermaid
+///stateDiagram-v2\n",
+    );
     for transition in transitions {
         let Transition {
             initial_state,
@@ -94,11 +96,19 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         //     id(&final_state)
         // )
         // .unwrap();
+        use std::fmt::Write;
         #[cfg(feature = "diagram")]
         write!(
             mermaid_diagram,
-            "///    {initial_state} --> {final_state}: {}",
-            input_value.match_on()
+            "///    {}",
+            &format!(
+                "{:?}",
+                format!(
+                    "{initial_state} --> {final_state}: {}",
+                    input_value.match_on()
+                )
+            )
+            .trim_matches('"'),
         )
         .unwrap();
 
@@ -129,11 +139,11 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         #[cfg(feature = "diagram")]
         mermaid_diagram.push('\n');
 
-        states.insert(initial_state);
-        states.insert(Box::leak(Box::new(final_state.clone().variant())));
-        inputs.insert(input_value);
-        if let Some(ref output) = output {
-            outputs.insert(output);
+        states.push(initial_state.clone());
+        states.push(final_state.clone().variant());
+        inputs.push(input_value.clone());
+        if let Some(output) = output {
+            outputs.push(output.clone().variant());
         }
     }
 
@@ -146,44 +156,50 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         .replace(')', "#41;")
         .replace('[', "#91;")
         .replace(']', "#93;")
+        .replace('|', "#124;")
         .replace("Default", "def")
         .parse()
         .unwrap();
 
-    let input_impl = input_name.tokenize(|f| {
-        quote! {
-            #attrs
-            #visibility enum #f {
-                #(#inputs),*
+    let input_impl = variant::tokenize(&inputs, |x| {
+        input_name.tokenize(|f| {
+            quote! {
+                #attrs
+                #visibility enum #f {
+                    #(#x),*
+                }
             }
-        }
+        })
     });
     let input_name = input_name.path();
-    let state_impl = state_name.tokenize(|f| {
-        quote! {
-            #attrs
-            #visibility enum #f {
-                #(#states),*
+    let state_impl = variant::tokenize(&states, |x| {
+        state_name.tokenize(|f| {
+            quote! {
+                #attrs
+                #visibility enum #f {
+                    #(#x),*
+                }
             }
-        }
+        })
     });
     let state_name = state_name.path();
+    let output_impl = variant::tokenize(&*outputs, |outputs| {
+        output_name.tokenize(|output_name| {
+            // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
+            // altogether if the output alphabet is empty.
+            let attrs = if outputs.is_empty() {
+                quote!()
+            } else {
+                attrs.clone()
+            };
 
-    let output_impl = output_name.tokenize(|output_name| {
-        // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
-        // altogether if the output alphabet is empty.
-        let attrs = if outputs.is_empty() {
-            quote!()
-        } else {
-            attrs.clone()
-        };
-
-        quote! {
-            #attrs
-            #visibility enum #output_name {
-                #(#outputs),*
+            quote! {
+                #attrs
+                #visibility enum #output_name {
+                    #(#outputs),*
+                }
             }
-        }
+        })
     });
 
     let output_name = output_name.path();
