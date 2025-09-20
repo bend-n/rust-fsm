@@ -113,19 +113,16 @@ impl Variant {
             self.ident.to_token_stream()
         }
     }
-    pub fn separate(&self) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    pub fn separate(&self) -> (proc_macro2::TokenStream, Option<proc_macro2::TokenStream>) {
         if let Self {
             ident,
             field: Some((_, p, g)),
         } = self
         {
-            let b = g
-                .as_ref()
-                .map(|x| quote::quote! { if (#x) })
-                .unwrap_or_default();
+            let b = g.as_ref().map(|x| quote::quote! { #x });
             (quote::quote! { #ident(#p) }, b)
         } else {
-            (self.ident.to_token_stream(), quote::quote! {})
+            (self.ident.to_token_stream(), None)
         }
     }
 }

@@ -112,9 +112,17 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         )
         .unwrap();
 
-        let initial_ = initial_state.match_on();
+        let (initial_, guard_) = initial_state.separate();
         let final_ = final_state.reduce();
         let (input_, guard) = input_value.separate();
+        let guard = guard_
+            .clone()
+            .zip(guard.clone())
+            .map(|(x, y)| {
+                quote! { if #x && #y }
+            })
+            .or(guard_.or(guard).map(|x| quote! { if #x }))
+            .unwrap_or_default();
 
         // let input_ = input_value.match_on();
         // let final_state_ = final_state.match_on();
