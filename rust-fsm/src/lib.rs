@@ -229,7 +229,7 @@ You can see an example of the Circuit Breaker state machine in the
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::fmt;
+use core::fmt::{self, Debug, Display};
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -262,14 +262,17 @@ pub trait StateMachineImpl: Sized {
     fn consume(
         &mut self,
         input: Self::Input,
-    ) -> Result<Option<Self::Output>, TransitionImpossibleError>
+    ) -> Result<Option<Self::Output>, TransitionImpossibleError<Self, Self::Input>>
     where
         Self::Input: Clone,
         Self: Clone,
     {
         self.clone()
             .transition(input.clone())
-            .ok_or(TransitionImpossibleError)
+            .ok_or_else(|| TransitionImpossibleError {
+                state: self.clone(),
+                input: input.clone(),
+            })
             .map(|state| std::mem::replace(self, state).output(input))
     }
 }
@@ -277,19 +280,24 @@ pub trait StateMachineImpl: Sized {
 #[derive(Debug, Clone)]
 /// An error type that represents that the state transition is impossible given
 /// the current combination of state and input.
-pub struct TransitionImpossibleError;
+pub struct TransitionImpossibleError<S, I> {
+    state: S,
+    input: I,
+}
 
-impl fmt::Display for TransitionImpossibleError {
+impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError<S, I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "cannot perform a state transition from the current state with the provided input"
+            "cannot perform a state transition from the current state ({:?}) with the provided input ({:?})",
+            self.state,
+            self.input
         )
     }
 }
 
 #[cfg(feature = "std")]
-impl Error for TransitionImpossibleError {
+impl<S: Debug, I: Debug> Error for TransitionImpossibleError<S, I> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
     }

@@ -9,7 +9,7 @@ state_machine! {
     /// A dummy implementation of the Circuit Breaker pattern to demonstrate
     /// capabilities of its library DSL for defining finite state machines.
     /// https://martinfowler.com/bliki/CircuitBreaker.html
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Debug)]
     pub CircuitBreaker => Result => Action
 
     Closed => Unsuccessful => Open [SetupTimer],
