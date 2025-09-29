@@ -229,7 +229,7 @@ You can see an example of the Circuit Breaker state machine in the
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::fmt::{self, Debug, Display};
+use core::fmt::{self, Debug};
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -250,12 +250,11 @@ pub trait StateMachineImpl: Sized {
     type Output;
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs `None` when there is no transition
-    /// for a given combination of the input and the state.
-    fn transition(self, input: Self::Input) -> Option<Self>;
-    /// The output function that outputs some value from the output alphabet
-    /// based on the current state and the given input. Outputs `None` when
-    /// there is no output for a given combination of the input and the state.
-    fn output(self, input: Self::Input) -> Option<Self::Output>;
+    /// for a given combination of the input and the state. Also gives you the output, if any.
+    fn transition(
+        self,
+        input: Self::Input,
+    ) -> Result<(Self, Option<Self::Output>), TransitionImpossibleError<Self, Self::Input>>;
     /// Consumes the provided input, gives an output and performs a state
     /// transition. If a state transition with the current state and the
     /// provided input is not allowed, returns an error.
@@ -264,16 +263,12 @@ pub trait StateMachineImpl: Sized {
         input: Self::Input,
     ) -> Result<Option<Self::Output>, TransitionImpossibleError<Self, Self::Input>>
     where
-        Self::Input: Clone,
         Self: Clone,
     {
-        self.clone()
-            .transition(input.clone())
-            .ok_or_else(|| TransitionImpossibleError {
-                state: self.clone(),
-                input: input.clone(),
-            })
-            .map(|state| std::mem::replace(self, state).output(input))
+        self.clone().transition(input).map(|(s, output)| {
+            *self = s;
+            output
+        })
     }
 }
 
@@ -281,8 +276,8 @@ pub trait StateMachineImpl: Sized {
 /// An error type that represents that the state transition is impossible given
 /// the current combination of state and input.
 pub struct TransitionImpossibleError<S, I> {
-    state: S,
-    input: I,
+    pub state: S,
+    pub input: I,
 }
 
 impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError<S, I> {

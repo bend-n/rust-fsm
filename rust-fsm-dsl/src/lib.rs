@@ -6,7 +6,6 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use std::iter::FromIterator;
 use syn::*;
 mod parser;
 mod variant;
@@ -24,7 +23,7 @@ struct Transition<'a> {
 
 fn attrs_to_token_stream(attrs: Vec<Attribute>) -> proc_macro2::TokenStream {
     let attrs = attrs.into_iter().map(ToTokens::into_token_stream);
-    proc_macro2::TokenStream::from_iter(attrs)
+    attrs.collect()
 }
 
 #[proc_macro]
@@ -67,7 +66,6 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     let mut inputs = vec![];
     let mut outputs = vec![];
     let mut transition_cases = vec![];
-    let mut output_cases = vec![];
 
     #[cfg(feature = "diagram")]
     let mut mermaid_diagram = format!(
@@ -126,23 +124,21 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
 
         // let input_ = input_value.match_on();
         // let final_state_ = final_state.match_on();
+        let output_ = output
+            .as_ref()
+            .map(|x| {
+                #[cfg(feature = "diagram")]
+                mermaid_diagram.push_str(&format!(" [\"{x}\"]"));
+                let output = x.reduce();
+                quote! { ::core::option::Option::Some(Self::Output::#output) }
+            })
+            .unwrap_or(quote! { ::core::option::Option::None });
+        // let x = format!("{}, {} {} => {}", initial_, input_, guard, output_);
         transition_cases.push(quote! {
             (Self::#initial_, Self::Input::#input_) #guard => {
-                Some(Self::#final_)
+                ::core::result::Result::Ok((Self::#final_, #output_))
             }
         });
-
-        if let Some(output_value) = output {
-            let output_ = output_value.reduce();
-            output_cases.push(quote! {
-                (Self::#initial_, Self::Input::#input_) #guard => {
-                    Some(Self::Output::#output_)
-                }
-            });
-
-            #[cfg(feature = "diagram")]
-            mermaid_diagram.push_str(&format!(" [\"{output_value}\"]"));
-        }
 
         #[cfg(feature = "diagram")]
         mermaid_diagram.push('\n');
@@ -191,7 +187,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         })
     });
     let state_name = state_name.path();
-    let output_impl = variant::tokenize(&*outputs, |outputs| {
+    let output_impl = variant::tokenize(&outputs, |outputs| {
         output_name.tokenize(|output_name| {
             // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
             // altogether if the output alphabet is empty.
@@ -231,19 +227,16 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
             type Input = #input_name;
             type Output = #output_name;
 
-            fn transition(self, input: Self::Input) -> Option<Self> {
+            fn transition(self, input: Self::Input) -> ::core::result::Result<
+                (Self, ::core::option::Option<Self::Output>),
+                ::rust_fsm::TransitionImpossibleError<Self, Self::Input>
+            > {
                 match (self, input) {
                     #(#transition_cases)*
-                    _ => None,
+                    (state, input) => ::core::result::Result::Err(::rust_fsm::TransitionImpossibleError { state, input, }),
                 }
             }
 
-            fn output(self, input: Self::Input) -> Option<Self::Output> {
-                match (self, input) {
-                    #(#output_cases)*
-                    _ => None,
-                }
-            }
         }
 
     };

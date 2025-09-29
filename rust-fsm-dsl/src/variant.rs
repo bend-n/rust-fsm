@@ -16,8 +16,7 @@ pub fn find_type(of: &Variant, list: &[Variant]) -> Option<Type> {
             let i = &of.ident;
             list.iter()
                 .filter(|x| &x.ident == i)
-                .filter_map(|x| x.field.as_ref().and_then(|x| x.0.clone()))
-                .next()
+                .find_map(|x| x.field.as_ref().and_then(|x| x.0.clone()))
         })
     })
 }
@@ -29,14 +28,11 @@ pub fn tokenize(
         .into_iter()
         .map(|x| {
             let i = &x.ident;
-            x.field
-                .as_ref()
-                .map(|_| {
-                    let y = find_type(x, &*inputs);
-                    y.ok_or(Error::new_spanned(&x.ident, "type never specified"))
-                        .map(|y| quote::quote! {#i(#y)})
-                })
-                .unwrap_or(Ok(quote::quote! { #i }))
+            x.field.as_ref().map_or(Ok(quote::quote! { #i }), |_| {
+                let y = find_type(x, inputs);
+                y.ok_or(Error::new_spanned(&x.ident, "type never specified"))
+                    .map(|y| quote::quote! {#i(#y)})
+            })
         })
         .collect::<Result<_>>()
         .map_err(Error::into_compile_error)
@@ -89,7 +85,7 @@ impl Eq for Variant {}
 
 impl PartialOrd for Variant {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.ident.partial_cmp(&other.ident)
+        Some(self.cmp(other))
     }
 }
 impl Ord for Variant {
