@@ -111,7 +111,9 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         .unwrap();
 
         let (initial_, guard_) = initial_state.separate();
-        let final_ = final_state.reduce();
+        let final_ = final_state
+            .reduce()
+            .map_or(initial_state.match_on(), |x| quote! { #x });
         let (input_, guard) = input_value.separate();
         let guard = guard_
             .clone()
@@ -129,7 +131,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
             .map(|x| {
                 #[cfg(feature = "diagram")]
                 mermaid_diagram.push_str(&format!(" [\"{x}\"]"));
-                let output = x.reduce();
+                let output = x.reduce().unwrap();
                 quote! { ::core::option::Option::Some(Self::Output::#output) }
             })
             .unwrap_or(quote! { ::core::option::Option::None });
@@ -144,10 +146,10 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         mermaid_diagram.push('\n');
 
         states.push(initial_state.clone());
-        states.push(final_state.clone().variant());
+        states.extend(final_state.clone().variant());
         inputs.push(input_value.clone());
         if let Some(output) = output {
-            outputs.push(output.clone().variant());
+            outputs.push(output.clone().variant().unwrap());
         }
     }
 

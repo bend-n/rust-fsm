@@ -130,57 +130,69 @@ impl Display for Variant {
 }
 /// type and expression
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Final(Variant);
+pub struct Final(Option<Variant>);
 
 impl Parse for Final {
     fn parse(input: parse::ParseStream) -> Result<Self> {
-        let ident: Ident = input.parse()?;
-        let field = if input.peek(token::Paren) {
-            let inp;
-            parenthesized!(inp in input);
-            let t = inp
-                .to_string()
-                .contains("=>")
-                .then(|| {
-                    inp.parse()
-                        .and_then(|x| inp.parse::<Token![=>]>().map(|_| x))
-                })
-                .transpose()?;
+        let b = input.peek(Token![_]);
+        b.then(|| input.parse::<Token![_]>()).transpose()?;
+        (!b).then(|| {
+            let ident: Ident = input.parse()?;
+            let field = if input.peek(token::Paren) {
+                let inp;
+                parenthesized!(inp in input);
+                let t = inp
+                    .to_string()
+                    .contains("=>")
+                    .then(|| {
+                        inp.parse()
+                            .and_then(|x| inp.parse::<Token![=>]>().map(|_| x))
+                    })
+                    .transpose()?;
 
-            Some((
-                t,
-                Pat::Wild(PatWild {
-                    attrs: vec![],
-                    underscore_token: Default::default(),
-                }),
-                Some(inp.parse()?),
-            ))
-        } else {
-            None
-        };
-        Ok(Final(Variant { ident, field }))
+                Some((
+                    t,
+                    Pat::Wild(PatWild {
+                        attrs: vec![],
+                        underscore_token: Default::default(),
+                    }),
+                    Some(inp.parse()?),
+                ))
+            } else {
+                None
+            };
+            Ok(Variant { ident, field })
+        })
+        .transpose()
+        .map(Self)
     }
 }
 
 impl Final {
-    pub fn reduce(&self) -> proc_macro2::TokenStream {
-        if let Self(Variant {
-            ident,
-            field: Some((_, _, v)),
-        }) = self
-        {
-            quote::quote! { #ident ( #v ) }
-        } else {
-            self.0.ident.to_token_stream()
-        }
+    pub fn reduce(&self) -> Option<proc_macro2::TokenStream> {
+        self.0.as_ref().map(|x: &Variant| {
+            if let Variant {
+                ident,
+                field: Some((_, _, v)),
+            } = x
+            {
+                quote::quote! { #ident ( #v ) }
+            } else {
+                x.ident.to_token_stream()
+            }
+        })
     }
-    pub fn variant(self) -> Variant {
+    pub fn variant(self) -> Option<Variant> {
         self.0
     }
 }
 
 impl Display for Final {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(
+            f,
+            "{}",
+            self.0.as_ref().map(|x| x.to_string()).unwrap_or("_".into())
+        )
     }
 }
