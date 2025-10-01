@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display};
 
 use proc_macro2::TokenStream;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::{parse::Parse, *};
 /// Variant with no discriminator
 #[derive(Debug, Clone)]
@@ -28,10 +28,13 @@ pub fn tokenize(
         .into_iter()
         .map(|x| {
             let i = &x.ident;
-            x.field.as_ref().map_or(Ok(quote::quote! { #i }), |_| {
+            x.field.as_ref().map_or(Ok(quote! { #i }), |_| {
                 let y = find_type(x, inputs);
                 y.ok_or(Error::new_spanned(&x.ident, "type never specified"))
-                    .map(|y| quote::quote! {#i(#y)})
+                    .map(|y| match y {
+                        Type::Tuple(TypeTuple { elems, .. }) => quote! { #i(#elems) },
+                        y => quote! {#i(#y)},
+                    })
             })
         })
         .collect::<Result<_>>()
@@ -103,8 +106,11 @@ impl Variant {
         {
             let b = g
                 .as_ref()
-                .map_or_else(Default::default, |x| quote::quote! { if #x });
-            quote::quote! { #ident(#p) #b }
+                .map_or_else(Default::default, |x| quote! { if #x });
+            match p {
+                Pat::Tuple(PatTuple { elems, .. }) => quote! { #ident(#elems) #b },
+                p => quote! { #ident(#p) #b },
+            }
         } else {
             self.ident.to_token_stream()
         }
@@ -115,8 +121,14 @@ impl Variant {
             field: Some((_, p, g)),
         } = self
         {
-            let b = g.as_ref().map(|x| quote::quote! { #x });
-            (quote::quote! { #ident(#p) }, b)
+            let b = g.as_ref().map(|x| quote! { #x });
+            (
+                match p {
+                    Pat::Tuple(PatTuple { elems, .. }) => quote! { #ident(#elems) },
+                    p => quote! { #ident(#p) },
+                },
+                b,
+            )
         } else {
             (self.ident.to_token_stream(), None)
         }
@@ -176,7 +188,14 @@ impl Final {
                 field: Some((_, _, v)),
             } = x
             {
-                quote::quote! { #ident ( #v ) }
+                let v = v
+                    .as_ref()
+                    .map(|x| match x {
+                        Expr::Tuple(x) => quote! { #ident #x },
+                        x => quote! { #ident(#x)},
+                    })
+                    .unwrap_or(ident.to_token_stream());
+                v
             } else {
                 x.ident.to_token_stream()
             }
