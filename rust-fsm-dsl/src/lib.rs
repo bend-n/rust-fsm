@@ -225,7 +225,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         #state_impl
         #output_impl
 
-        impl ::rust_fsm::StateMachineImpl for #state_name {
+        impl ::rust_fsm::StateMachine for #state_name {
             type Input = #input_name;
             type Output = #output_name;
 

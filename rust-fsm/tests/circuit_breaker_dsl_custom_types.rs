@@ -5,21 +5,21 @@ use rust_fsm::*;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum Input {
     Successful,
     Unsuccessful,
     TimerTriggered,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum State {
     Closed,
     HalfOpen,
     Open,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum Output {
     SetupTimer,
 }

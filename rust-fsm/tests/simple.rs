@@ -1,7 +1,7 @@
 use rust_fsm::*;
 
 state_machine! {
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug)]
     #[repr(C)]
     Door => Action => __
 
