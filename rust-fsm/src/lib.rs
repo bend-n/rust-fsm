@@ -229,10 +229,14 @@ You can see an example of the Circuit Breaker state machine in the
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::fmt::{self, Debug};
+use core::{
+    fmt::{self, Debug},
+    marker::PhantomData,
+};
 #[cfg(feature = "std")]
 use std::error::Error;
 
+use replace_with::replace_with_or_abort_and_return;
 #[cfg(feature = "dsl")]
 pub use rust_fsm_dsl::state_machine;
 
@@ -258,16 +262,21 @@ pub trait StateMachineImpl: Sized {
     /// Consumes the provided input, gives an output and performs a state
     /// transition. If a state transition with the current state and the
     /// provided input is not allowed, returns an error.
+    ///
+    /// Aborts if `transition` panics.
     fn consume(
         &mut self,
         input: Self::Input,
-    ) -> Result<Option<Self::Output>, TransitionImpossibleError<Self, Self::Input>>
-    where
-        Self: Clone,
-    {
-        self.clone().transition(input).map(|(s, output)| {
-            *self = s;
-            output
+    ) -> Result<Option<Self::Output>, TransitionImpossibleError_<Self, Self::Input>> {
+        replace_with_or_abort_and_return(self, |x| match x.transition(input) {
+            Ok((state, ret)) => (Ok(ret), state),
+            Err(TransitionImpossibleError { state, input }) => (
+                Err(TransitionImpossibleError_ {
+                    state: PhantomData,
+                    input,
+                }),
+                state,
+            ),
         })
     }
 }
@@ -277,6 +286,11 @@ pub trait StateMachineImpl: Sized {
 /// the current combination of state and input.
 pub struct TransitionImpossibleError<S, I> {
     pub state: S,
+    pub input: I,
+}
+#[derive(Debug, Clone)]
+pub struct TransitionImpossibleError_<S, I> {
+    pub state: PhantomData<S>,
     pub input: I,
 }
 
@@ -290,9 +304,26 @@ impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError<S, I> {
         )
     }
 }
+impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError_<S, I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "cannot perform a state transition from the current state (of type {:?}) with the provided input ({:?})",
+            self.state,
+            self.input
+        )
+    }
+}
 
 #[cfg(feature = "std")]
 impl<S: Debug, I: Debug> Error for TransitionImpossibleError<S, I> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+#[cfg(feature = "std")]
+impl<S: Debug, I: Debug> Error for TransitionImpossibleError_<S, I> {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
     }
