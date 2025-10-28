@@ -127,21 +127,27 @@ pub struct StateMachineDef {
 }
 
 pub enum ImplementationRequired {
-    Yes(Type),
+    Yes(Ident, Generics),
     No(Path),
 }
 
 impl ImplementationRequired {
-    pub fn tokenize(&self, f: impl Fn(&Type) -> TokenStream) -> TokenStream {
+    pub fn tokenize(&self, f: impl Fn(&Ident) -> TokenStream) -> TokenStream {
         match self {
-            ImplementationRequired::Yes(ident) => f(ident),
+            ImplementationRequired::Yes(ident, _) => f(ident),
             ImplementationRequired::No(_) => TokenStream::default(),
         }
     }
-    pub fn path(self) -> TokenStream {
+    pub fn g(&self) -> TokenStream {
         match self {
-            ImplementationRequired::Yes(ident) => quote::quote! { #ident },
-            ImplementationRequired::No(path) => quote::quote! { #path },
+            ImplementationRequired::Yes(_, g) => quote::quote! {#g},
+            ImplementationRequired::No(_) => TokenStream::default(),
+        }
+    }
+    pub fn path(self) -> Path {
+        match self {
+            ImplementationRequired::Yes(ident, _) => ident.into(),
+            ImplementationRequired::No(path) => path,
         }
     }
 }
@@ -171,7 +177,12 @@ impl Parse for StateMachineDef {
                         ImplementationRequired::No(x)
                     })
                 })
-                .unwrap_or_else(|| input.parse::<Type>().map(ImplementationRequired::Yes))
+                .unwrap_or_else(|| {
+                    let t = input.parse::<Ident>()?;
+                    let g = input.parse::<Generics>()?;
+                    dbg!(&g);
+                    Ok(ImplementationRequired::Yes(t, g))
+                })
         };
         let state_name = i()?;
         input.parse::<Token![=>]>()?;

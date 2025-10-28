@@ -166,12 +166,12 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         .replace("Default", "def")
         .parse()
         .unwrap();
-
+    let input_generics = input_name.g();
     let input_impl = variant::tokenize(&inputs, |x| {
         input_name.tokenize(|f| {
             quote! {
                 #attrs
-                #visibility enum #f {
+                #visibility enum #f #input_generics {
                     #(#x),*
                 }
             }
@@ -182,7 +182,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         state_name.tokenize(|f| {
             quote! {
                 #attrs
-                #visibility enum #f {
+                #visibility enum #f  {
                     #(#x),*
                 }
             }
@@ -226,12 +226,12 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         #output_impl
 
         impl ::rust_fsm::StateMachine for #state_name {
-            type Input = #input_name;
-            type Output = #output_name;
+            type Input<'i> = #input_name #input_generics;
+            type Output<'o> = #output_name;
 
-            fn transition(self, input: Self::Input) -> ::core::result::Result<
-                (Self, ::core::option::Option<Self::Output>),
-                ::rust_fsm::TransitionImpossibleError<Self, Self::Input>
+            fn transition(self, input: Self::Input<'_>) -> ::core::result::Result<
+                (Self, ::core::option::Option<Self::Output<'_>>),
+                ::rust_fsm::TransitionImpossibleError<Self, Self::Input<'_>>
             > {
                 match (self, input) {
                     #(#transition_cases)*

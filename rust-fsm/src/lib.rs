@@ -229,9 +229,9 @@ pub use aquamarine::aquamarine;
 /// this library for more practical things.
 pub trait StateMachine: Sized {
     /// The input alphabet.
-    type Input;
+    type Input<'i>;
     /// The output alphabet.
-    type Output;
+    type Output<'o>;
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs [`Err`] (allowing recovery of the state and input)
     /// when there is no transition for a given combination of the input and the state.
@@ -240,17 +240,17 @@ pub trait StateMachine: Sized {
     /// This function is discouraged from panicking.
     fn transition(
         self,
-        input: Self::Input,
-    ) -> Result<(Self, Option<Self::Output>), TransitionImpossibleError<Self, Self::Input>>;
+        input: Self::Input<'_>,
+    ) -> Result<(Self, Option<Self::Output<'_>>), TransitionImpossibleError<Self, Self::Input<'_>>>;
     /// Consumes the provided input, gives an output and performs a state
     /// transition. If a state transition with the current state and the
     /// provided input is not allowed, returns an error containing the input.
     ///
     /// Aborts if `transition` panics.
-    fn consume(
+    fn consume<'l>(
         &mut self,
-        input: Self::Input,
-    ) -> Result<Option<Self::Output>, TransitionImpossibleError_<Self, Self::Input>> {
+        input: Self::Input<'l>,
+    ) -> Result<Option<Self::Output<'l>>, TransitionImpossibleError_<Self, Self::Input<'l>>> {
         replace_with_or_abort_and_return(self, |x| match x.transition(input) {
             Ok((state, ret)) => (Ok(ret), state),
             Err(TransitionImpossibleError { state, input }) => (
