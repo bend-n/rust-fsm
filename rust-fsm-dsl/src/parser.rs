@@ -127,21 +127,21 @@ pub struct StateMachineDef {
 }
 
 pub enum ImplementationRequired {
-    Yes(Ident),
+    Yes(Type),
     No(Path),
 }
 
 impl ImplementationRequired {
-    pub fn tokenize(&self, f: impl Fn(&Ident) -> TokenStream) -> TokenStream {
+    pub fn tokenize(&self, f: impl Fn(&Type) -> TokenStream) -> TokenStream {
         match self {
             ImplementationRequired::Yes(ident) => f(ident),
             ImplementationRequired::No(_) => TokenStream::default(),
         }
     }
-    pub fn path(self) -> Path {
+    pub fn path(self) -> TokenStream {
         match self {
-            ImplementationRequired::Yes(ident) => ident.into(),
-            ImplementationRequired::No(path) => path,
+            ImplementationRequired::Yes(ident) => quote::quote! { #ident },
+            ImplementationRequired::No(path) => quote::quote! { #path },
         }
     }
 }
@@ -164,9 +164,14 @@ impl Parse for StateMachineDef {
         let visibility = input.parse()?;
         let i = || {
             input
-                .parse::<Ident>()
-                .map(ImplementationRequired::Yes)
-                .or_else(|_| input.parse::<Path>().map(ImplementationRequired::No))
+                .peek(Token![::])
+                .then(|| {
+                    input.parse::<Path>().map(|mut x| {
+                        x.leading_colon = None;
+                        ImplementationRequired::No(x)
+                    })
+                })
+                .unwrap_or_else(|| input.parse::<Type>().map(ImplementationRequired::Yes))
         };
         let state_name = i()?;
         input.parse::<Token![=>]>()?;

@@ -25,7 +25,7 @@ pub enum Output {
 }
 
 state_machine! {
-    crate::State => crate::Input => crate::Output
+    ::crate::State => ::crate::Input => ::crate::Output
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
