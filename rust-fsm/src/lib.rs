@@ -231,36 +231,32 @@ pub trait StateMachine: Sized {
     /// The input alphabet.
     type Input<'i>;
     /// The output alphabet.
-    type Output<'o>;
+    type Output<'i>;
     /// The transition fuction that outputs a new state based on the current
     /// state and the provided input. Outputs [`Err`] (allowing recovery of the state and input)
     /// when there is no transition for a given combination of the input and the state.
     /// Also gives you the output, if any.
     ///
     /// This function is discouraged from panicking.
-    fn transition(
+    fn transition<'i>(
         self,
-        input: Self::Input<'_>,
-    ) -> Result<(Self, Option<Self::Output<'_>>), TransitionImpossibleError<Self, Self::Input<'_>>>;
+        input: Self::Input<'i>,
+    ) -> Result<(Self, Option<Self::Output<'i>>), TransitionImpossibleError<Self, Self::Input<'i>>>;
     /// Consumes the provided input, gives an output and performs a state
     /// transition. If a state transition with the current state and the
     /// provided input is not allowed, returns an error containing the input.
     ///
     /// Aborts if `transition` panics.
-    fn consume<'l>(
-        &mut self,
-        input: Self::Input<'l>,
-    ) -> Result<Option<Self::Output<'l>>, TransitionImpossibleError_<Self, Self::Input<'l>>> {
+    fn consume<'me, 'i>(
+        &'me mut self,
+        input: Self::Input<'i>,
+    ) -> Result<Option<Self::Output<'i>>, TransitionImpossibleError_<'me, Self, Self::Input<'i>>>
+    {
         replace_with_or_abort_and_return(self, |x| match x.transition(input) {
             Ok((state, ret)) => (Ok(ret), state),
-            Err(TransitionImpossibleError { state, input }) => (
-                Err(TransitionImpossibleError_ {
-                    state: PhantomData,
-                    input,
-                }),
-                state,
-            ),
+            Err(TransitionImpossibleError { state, input }) => (Err(input), state),
         })
+        .map_err(|input| TransitionImpossibleError_ { state: self, input })
     }
 }
 
@@ -271,13 +267,17 @@ pub struct TransitionImpossibleError<S, I> {
     pub state: S,
     pub input: I,
 }
+/// An error type that represents that the state transition is impossible given
+/// the current combination of state and input.
 #[derive(Debug, Clone)]
-pub struct TransitionImpossibleError_<S, I> {
-    pub state: PhantomData<S>,
+pub struct TransitionImpossibleError_<'a, S, I> {
+    pub state: &'a S,
     pub input: I,
 }
+macro_rules! implement {
+    ({$($p:tt)+} $ty:ty) => {
 
-impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError<S, I> {
+impl<$($p)+> fmt::Display for $ty {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -287,27 +287,11 @@ impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError<S, I> {
         )
     }
 }
-impl<S: Debug, I: Debug> fmt::Display for TransitionImpossibleError_<S, I> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "cannot perform a state transition from the current state (of type {:?}) with the provided input ({:?})",
-            self.state,
-            self.input
-        )
-    }
-}
-
 #[cfg(feature = "std")]
-impl<S: Debug, I: Debug> Error for TransitionImpossibleError<S, I> {
+impl<$($p)+> Error for $ty {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
     }
-}
-
-#[cfg(feature = "std")]
-impl<S: Debug, I: Debug> Error for TransitionImpossibleError_<S, I> {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        None
-    }
-}
+}}}
+implement!({S: Debug, I: Debug} TransitionImpossibleError<S, I>);
+implement!({'a, S: Debug, I: Debug} TransitionImpossibleError_<'a, S, I>);

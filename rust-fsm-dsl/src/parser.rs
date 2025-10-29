@@ -180,7 +180,6 @@ impl Parse for StateMachineDef {
                 .unwrap_or_else(|| {
                     let t = input.parse::<Ident>()?;
                     let g = input.parse::<Generics>()?;
-                    dbg!(&g);
                     Ok(ImplementationRequired::Yes(t, g))
                 })
         };

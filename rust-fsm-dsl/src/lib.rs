@@ -189,6 +189,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         })
     });
     let state_name = state_name.path();
+    let output_generics = output_name.g();
     let output_impl = variant::tokenize(&outputs, |outputs| {
         output_name.tokenize(|output_name| {
             // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
@@ -201,7 +202,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
 
             quote! {
                 #attrs
-                #visibility enum #output_name {
+                #visibility enum #output_name #output_generics {
                     #(#outputs),*
                 }
             }
@@ -227,7 +228,7 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
 
         impl ::rust_fsm::StateMachine for #state_name {
             type Input<'i> = #input_name #input_generics;
-            type Output<'o> = #output_name;
+            type Output<'i> = #output_name #output_generics;
 
             fn transition(self, input: Self::Input<'_>) -> ::core::result::Result<
                 (Self, ::core::option::Option<Self::Output<'_>>),
