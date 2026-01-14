@@ -32,16 +32,13 @@ fn attrs_to_token_stream(attrs: Vec<Attribute>) -> proc_macro2::TokenStream {
 pub fn state_machine(tokens: TokenStream) -> TokenStream {
     let StateMachineDef {
         doc,
-        visibility,
-        state_name,
-        input_name,
-        output_name,
+        state_name: (state_attrs, state_visibility, state_name),
+        input_name: (input_attrs, input_visibility, input_name),
+        output_name: (output_attrs, output_visibility, output_name),
         transitions,
-        attributes,
     } = parse_macro_input!(tokens as parser::StateMachineDef);
 
     let doc = attrs_to_token_stream(doc);
-    let attrs = attrs_to_token_stream(attributes);
 
     if transitions.is_empty() {
         let output = quote! {
@@ -168,10 +165,11 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
         .unwrap();
     let input_generics = input_name.g();
     let input_impl = variant::tokenize(&inputs, |x| {
+        let attrs = attrs_to_token_stream(input_attrs);
         input_name.tokenize(|f| {
             quote! {
                 #attrs
-                #visibility enum #f #input_generics {
+                #input_visibility enum #f #input_generics {
                     #(#x),*
                 }
             }
@@ -179,10 +177,11 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     });
     let input_name = input_name.path();
     let state_impl = variant::tokenize(&states, |x| {
+        let attrs = attrs_to_token_stream(state_attrs.clone());
         state_name.tokenize(|f| {
             quote! {
                 #attrs
-                #visibility enum #f  {
+                #state_visibility enum #f  {
                     #(#x),*
                 }
             }
@@ -191,18 +190,11 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
     let state_name = state_name.path();
     let output_generics = output_name.g();
     let output_impl = variant::tokenize(&outputs, |outputs| {
+        let attrs = attrs_to_token_stream(output_attrs);
         output_name.tokenize(|output_name| {
-            // Many attrs and derives may work incorrectly (or simply not work) for empty enums, so we just skip them
-            // altogether if the output alphabet is empty.
-            let attrs = if outputs.is_empty() {
-                quote!()
-            } else {
-                attrs.clone()
-            };
-
             quote! {
                 #attrs
-                #visibility enum #output_name #output_generics {
+                #output_visibility enum #output_name #output_generics {
                     #(#outputs),*
                 }
             }

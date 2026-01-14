@@ -10,7 +10,9 @@ state_machine! {
     /// capabilities of its library DSL for defining finite state machines.
     /// https://martinfowler.com/bliki/CircuitBreaker.html
     #[derive(Debug)]
-    pub CircuitBreaker => Result => Action
+    pub CircuitBreaker =>
+    #[derive(Debug)] pub Result =>
+    #[derive(Debug)] pub Action
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,

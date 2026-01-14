@@ -117,13 +117,11 @@ impl Parse for TransitionDef {
 /// ```
 pub struct StateMachineDef {
     pub doc: Vec<Attribute>,
-    /// The visibility modifier (applies to all generated items)
-    pub visibility: Visibility,
-    pub state_name: ImplementationRequired,
-    pub input_name: ImplementationRequired,
-    pub output_name: ImplementationRequired,
+
+    pub state_name: (Vec<Attribute>, Visibility, ImplementationRequired),
+    pub input_name: (Vec<Attribute>, Visibility, ImplementationRequired),
+    pub output_name: (Vec<Attribute>, Visibility, ImplementationRequired),
     pub transitions: Vec<TransitionDef>,
-    pub attributes: Vec<Attribute>,
 }
 
 pub enum ImplementationRequired {
@@ -155,20 +153,20 @@ impl ImplementationRequired {
 impl Parse for StateMachineDef {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut doc = Vec::new();
-        let attributes = Attribute::parse_outer(input)?
-            .into_iter()
-            .filter_map(|attribute| {
-                if attribute.path().is_ident("doc") {
-                    doc.push(attribute);
-                    None
-                } else {
-                    Some(attribute)
-                }
-            })
-            .collect();
+        let mut i = || {
+            let attributes = Attribute::parse_outer(input)?
+                .into_iter()
+                .filter_map(|attribute| {
+                    if attribute.path().is_ident("doc") {
+                        doc.push(attribute);
+                        None
+                    } else {
+                        Some(attribute)
+                    }
+                })
+                .collect();
+            let visibility = input.parse()?;
 
-        let visibility = input.parse()?;
-        let i = || {
             input
                 .peek(Token![::])
                 .then(|| {
@@ -182,7 +180,9 @@ impl Parse for StateMachineDef {
                     let g = input.parse::<Generics>()?;
                     Ok(ImplementationRequired::Yes(t, g))
                 })
+                .map(|x| (attributes, visibility, x))
         };
+
         let state_name = i()?;
         input.parse::<Token![=>]>()?;
         let input_name = i()?;
@@ -196,12 +196,10 @@ impl Parse for StateMachineDef {
 
         Ok(Self {
             doc,
-            visibility,
             state_name,
             input_name,
             output_name,
             transitions,
-            attributes,
         })
     }
 }

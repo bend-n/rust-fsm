@@ -1,9 +1,7 @@
 use rust_fsm::*;
 
 state_machine! {
-    #[derive(Debug)]
-    #[repr(C)]
-    Door => Action => __
+    #[derive(Debug)] #[repr(C)] Door => #[derive(Debug)] #[repr(C)] Action => __
 
     Open => Key => Closed,
     Closed => Key => Open,

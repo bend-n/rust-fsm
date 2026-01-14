@@ -56,10 +56,13 @@ The DSL is parsed by the `state_machine` macro. Here is a little example.
 use rust_fsm::*;
 
 state_machine! {
-    #[derive(Debug)]
-    #[repr(C)]
+    #[derive(Debug)] #[repr(C)]
     /// A Circuit Breaker state machine.
-    CircuitBreaker => Result => Action
+    CircuitBreaker =>
+    #[derive(Debug)] #[repr(C)]
+    Result =>
+    #[derive(Debug)] #[repr(C)]
+    Action
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
