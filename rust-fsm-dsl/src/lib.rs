@@ -172,6 +172,12 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
                 #input_visibility enum #f #input_generics {
                     #(#x),*
                 }
+
+                impl #f #input_generics {
+                    #input_visibility fn name(&self) -> &'static str {
+                        match self { #(Self::#x => stringify!(#x)),* }
+                    }
+                }
             }
         })
     });
@@ -183,6 +189,12 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
                 #attrs
                 #state_visibility enum #f  {
                     #(#x),*
+                }
+
+                impl #f {
+                    #state_visibility fn name(&self) -> &'static str {
+                        match self { #(Self::#x => stringify!(#x)),* }
+                    }
                 }
             }
         })
@@ -196,6 +208,12 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
                 #attrs
                 #output_visibility enum #output_name #output_generics {
                     #(#outputs),*
+                }
+
+                impl #output_name #output_generics {
+                    #output_visibility fn name(&self) -> &'static str {
+                        match self { #(Self::#outputs => stringify!(#outputs)),* }
+                    }
                 }
             }
         })
@@ -231,7 +249,6 @@ pub fn state_machine(tokens: TokenStream) -> TokenStream {
                     (state, input) => ::core::result::Result::Err(::rust_fsm::TransitionImpossibleError { state, input, }),
                 }
             }
-
         }
 
     };

@@ -124,7 +124,7 @@ You can specify visibility like this:
 use rust_fsm::*;
 
 state_machine! {
-    pub CircuitBreaker => Result => Action
+    pub CircuitBreaker => pub Result => pub Action
 
     Closed => Unsuccessful => Open [SetupTimer],
     Open => TimerTriggered => HalfOpen,
